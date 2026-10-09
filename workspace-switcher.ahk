@@ -1,7 +1,7 @@
 #Requires AutoHotkey v2.0
 #SingleInstance Force
 
-; Virtual Desktop Switcher - Alt+Shift+1-9
+; Virtual Desktop Switcher - switch with Alt+Shift, move with Ctrl+Alt+Shift.
 ; Selects the matching OS-build and process-architecture DLL automatically.
 VDS_DLL := ResolveBackendDll()
 if !VDS_DLL
@@ -11,6 +11,7 @@ if !VDS_DLL
 ; desktop 0 receives evicted windows and desktop 1 is terminal-only.
 TERMINAL_DESKTOP := 1
 EVICTION_DESKTOP := 0
+SWITCH_TO_DESKTOP_AFTER_MOVE := true
 DRY_RUN := false
 CHECK_INTERVAL_MS := 1500
 TERMINAL_PROCESSES := Map(
@@ -35,9 +36,11 @@ DRY_RUN_REPORTED := Map()
 Loop 9 {
     n := A_Index
     HotKey "!+" n, SwitchVD.Bind(n)
+    HotKey "^!+" n, MoveActiveWindowToDesktop.Bind(n)
 }
 
 HotKey "!+0", SwitchVDLast
+HotKey "^!+0", MoveActiveWindowToLastDesktop
 HotKey "!+Left", SwitchVDRelative.Bind(-1)
 HotKey "!+Right", SwitchVDRelative.Bind(1)
 HotKey "!+p", ToggleTerminalGuard
@@ -45,30 +48,81 @@ SetTimer EnforceTerminalDesktop, CHECK_INTERVAL_MS
 
 SwitchVD(n, *) {
     global VDS_DLL
-    if (n > DllCall(VDS_DLL "\get_desktop_count", "int"))
+    if (n > DllCall(VDS_DLL "\get_desktop_count", "CDecl Int"))
         return
-    DllCall(VDS_DLL "\switch_to_desktop", "uint", n - 1, "int")
+    DllCall(VDS_DLL "\switch_to_desktop", "uint", n - 1, "CDecl Int")
     ActivateTopOnCurrentDesktop()
 }
 
 SwitchVDLast(*) {
     global VDS_DLL
-    count := DllCall(VDS_DLL "\get_desktop_count", "int")
+    count := DllCall(VDS_DLL "\get_desktop_count", "CDecl Int")
     if (count <= 0)
         return
-    DllCall(VDS_DLL "\switch_to_desktop", "uint", count - 1, "int")
+    DllCall(VDS_DLL "\switch_to_desktop", "uint", count - 1, "CDecl Int")
     ActivateTopOnCurrentDesktop()
 }
 
 SwitchVDRelative(delta, *) {
     global VDS_DLL
-    count := DllCall(VDS_DLL "\get_desktop_count", "int")
-    current := DllCall(VDS_DLL "\get_current_desktop", "int")
+    count := DllCall(VDS_DLL "\get_desktop_count", "CDecl Int")
+    current := DllCall(VDS_DLL "\get_current_desktop", "CDecl Int")
     if (count <= 0 || current < 0)
         return
     target := Mod(Mod(current + delta, count) + count, count)
-    DllCall(VDS_DLL "\switch_to_desktop", "uint", target, "int")
+    DllCall(VDS_DLL "\switch_to_desktop", "uint", target, "CDecl Int")
     ActivateTopOnCurrentDesktop()
+}
+
+; Move the foreground app window to desktop N. Optionally follow it there.
+MoveActiveWindowToDesktop(n, *) {
+    global VDS_DLL, SWITCH_TO_DESKTOP_AFTER_MOVE
+
+    count := DllCall(VDS_DLL "\get_desktop_count", "CDecl Int")
+    if (count < 0) {
+        TrayTip "Move window", "Could not read the virtual desktop list.", 1
+        return
+    }
+    if (count < n) {
+        TrayTip "Move window", "Desktop " n " does not exist.", 1
+        return
+    }
+
+    hwnd := WinExist("A")
+    if !hwnd || !IsGuardableAppWindow(hwnd) {
+        TrayTip "Move window", "No eligible active application window.", 1
+        return
+    }
+
+    title := WinGetTitle("ahk_id " hwnd)
+    result := DllCall(VDS_DLL "\move_window_to_desktop", "ptr", hwnd, "uint", n - 1, "CDecl Int")
+    if (result != 0) {
+        TrayTip "Move window", "Could not move " title " to desktop " n ".", 1
+        return
+    }
+
+    if SWITCH_TO_DESKTOP_AFTER_MOVE {
+        switchResult := DllCall(VDS_DLL "\switch_to_desktop", "uint", n - 1, "CDecl Int")
+        if (switchResult != 0) {
+            TrayTip "Move window", "Moved " title ", but could not switch to desktop " n ".", 1
+            return
+        }
+        try WinActivate("ahk_id " hwnd)
+    }
+
+    action := SWITCH_TO_DESKTOP_AFTER_MOVE ? "Moved and switched to desktop " n : "Moved to desktop " n
+    TrayTip "Move window", action ": " title, 1
+}
+
+MoveActiveWindowToLastDesktop(*) {
+    global VDS_DLL
+    count := DllCall(VDS_DLL "\get_desktop_count", "CDecl Int")
+    if (count < 0) {
+        TrayTip "Move window", "Could not read the virtual desktop list.", 1
+        return
+    }
+    if (count > 0)
+        MoveActiveWindowToDesktop(count)
 }
 
 ; Focus the topmost normal window after changing virtual desktops.
@@ -104,13 +158,13 @@ EnforceTerminalDesktop() {
 
     if TERMINAL_GUARD_PAUSED
         return
-    if (DllCall(VDS_DLL "\get_desktop_count", "int") <= TERMINAL_DESKTOP)
+    if (DllCall(VDS_DLL "\get_desktop_count", "CDecl Int") <= TERMINAL_DESKTOP)
         return
 
     for hwnd in WinGetList() {
         if !IsGuardableAppWindow(hwnd)
             continue
-        if (DllCall(VDS_DLL "\is_window_on_desktop", "ptr", hwnd, "uint", TERMINAL_DESKTOP, "int") != 1)
+        if (DllCall(VDS_DLL "\is_window_on_desktop", "ptr", hwnd, "uint", TERMINAL_DESKTOP, "CDecl Int") != 1)
             continue
         if IsTerminalWindow(hwnd)
             continue
@@ -124,7 +178,7 @@ EnforceTerminalDesktop() {
             }
             continue
         }
-        DllCall(VDS_DLL "\move_window_to_desktop", "ptr", hwnd, "uint", EVICTION_DESKTOP, "int")
+        DllCall(VDS_DLL "\move_window_to_desktop", "ptr", hwnd, "uint", EVICTION_DESKTOP, "CDecl Int")
     }
 }
 

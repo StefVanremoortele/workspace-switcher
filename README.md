@@ -25,7 +25,13 @@ The script runs in the tray and is portable. It does not need administrator righ
 | `Alt+Shift+1`..`9` | Switch to desktop 1..9, if it exists |
 | `Alt+Shift+0` | Switch to the last desktop |
 | `Alt+Shift+Left` / `Right` | Switch to the previous / next desktop, wrapping around |
+| `Ctrl+Alt+Shift+1`..`9` | Move the active window to desktop 1..9, then switch there by default |
+| `Ctrl+Alt+Shift+0` | Move the active window to the last desktop, then switch there by default |
 | `Alt+Shift+P` | Pause or resume the terminal-only desktop guard |
+
+Window-move shortcuts switch to the destination afterward by default. Set `SWITCH_TO_DESKTOP_AFTER_MOVE := false` near the top of the script to move the window and remain on the current desktop.
+
+Desktop 2 stays terminal-only while its guard is running. A non-terminal window moved there will be sent back to desktop 1 by the guard.
 
 ### Terminal-only desktop guard
 
