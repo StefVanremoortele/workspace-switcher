@@ -6,9 +6,18 @@ edition = "2021"
 [lib]
 crate-type = ["cdylib"]
 
+[features]
+default = ["win10"]
+win10 = ["dep:winvd_win10"]
+win11_22h2 = ["dep:winvd_win11_22h2"]
+win11_23h2 = ["dep:winvd_win11_23h2"]
+win11_24h2 = ["dep:winvd_win11_24h2"]
+
 [dependencies]
-winvd = "0.0.49"
-windows = { version = "0.58", features = ["Win32_Foundation"] }
+winvd_win10 = { package = "winvd", version = "=0.0.20", path = "vendor/winvd", optional = true }
+winvd_win11_22h2 = { package = "winvd", version = "=0.0.45", optional = true }
+winvd_win11_23h2 = { package = "winvd", version = "=0.0.46", optional = true }
+winvd_win11_24h2 = { package = "winvd", version = "=0.0.49", optional = true }
 
 [profile.release]
 opt-level = "z"
